@@ -383,4 +383,93 @@ contract RouterV2 {
         TransferHelper.safeTransferETH(to, amountsIn[amountsIn.length - 1]);
         return amountsIn[0];
     }
+
+    function _swapSupportingFeeOnTransferTokens(
+        address[] calldata path
+    ) internal {
+        require(path.length > 1, "Invalid Path");
+        address tokenIn = path[0];
+        address tokenOut = path[1];
+        address pair = IUniswapV2Factory(factory).getPair(tokenIn, tokenOut);
+        address nextPair = path.length == 2
+            ? address(this)
+            : IUniswapV2Factory(factory).getPair(path[1], path[2]);
+        for (uint i = 1; ; ) {
+            (uint reserveTokenIn, uint reserveTokenOut) = UniswapV2Library
+                .getReserves(factory, tokenIn, tokenOut);
+            uint amountIn = IERC20(tokenIn).balanceOf(pair) - reserveTokenIn;
+            uint amountOut = UniswapV2Library.getAmountOut(
+                amountIn,
+                reserveTokenIn,
+                reserveTokenOut
+            );
+            if (tokenIn < tokenOut) {
+                IPair(pair).swap(0, amountOut, nextPair, new bytes(0));
+            } else {
+                IPair(pair).swap(amountOut, 0, nextPair, new bytes(0));
+            }
+
+            i++;
+            if (i == path.length) {
+                break;
+            }
+            tokenIn = tokenOut;
+            tokenOut = path[i];
+            pair = nextPair;
+            nextPair = i == path.length - 1
+                ? address(this)
+                : IUniswapV2Factory(factory).getPair(path[i], path[i + 1]);
+        }
+    }
+
+    function swapExactTokensForTokensHavingFeesOnTransfer(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to
+    ) external returns (uint amountOut) {
+        // here we can estimate the amount as above since the fee impact will also have to be considered.
+        require(path.length > 1, "Invalid path");
+        address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
+        TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
+        _swapSupportingFeeOnTransferTokens(path);
+        amountOut = IERC20(path[path.length - 1]).balanceOf(address(this));
+        require(amountOut >= amountOutMin, "Not enough tokens can be received");
+        TransferHelper.safeTransfer(path[path.length - 1], to, amountOut);
+    }
+
+    function swapExactTokensForETHHavingFeesOnTransfer(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to
+    ) external returns (uint amountOut) {
+        // here we can estimate the amount as above since the fee impact will also have to be considered.
+        require(path.length > 1, "Invalid path");
+        require(path[path.length - 1] == WETH, "INVALID_PATH");
+        address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
+        TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
+        _swapSupportingFeeOnTransferTokens(path);
+        amountOut = IERC20(WETH).balanceOf(address(this));
+        require(amountOut >= amountOutMin, "Not enough ETH can be received");
+        IWETH(WETH).withdraw(amountOut);
+        TransferHelper.safeTransferETH(to, amountOut);
+    }
+
+    function swapExactETHTokensForTokensHavingFeesOnTransfer(
+        uint amountOutMin,
+        address[] calldata path,
+        address to
+    ) external payable returns (uint amountOut) {
+        // here we can estimate the amount as above since the fee impact will also have to be considered.
+        require(path.length > 1, "Invalid path");
+        require(path[0] == WETH, "INVALID_PATH");
+        IWETH(WETH).deposit{value: msg.value}();
+        address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
+        IWETH(WETH).transfer(pair, msg.value);
+        _swapSupportingFeeOnTransferTokens(path);
+        amountOut = IERC20(path[path.length - 1]).balanceOf(address(this));
+        require(amountOut >= amountOutMin, "Not enough tokens can be received");
+        TransferHelper.safeTransfer(path[path.length - 1], to, amountOut);
+    }
 }
