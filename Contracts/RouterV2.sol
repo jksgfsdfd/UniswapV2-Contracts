@@ -4,10 +4,11 @@ pragma solidity ^0.8.0;
 
 import "./Interfaces/IFactory.sol";
 import "./Interfaces/IPair.sol";
-import "./Libraries/UQ112x112.sol";
 import "./Interfaces/IERC20.sol";
 import "./Interfaces/IWETH.sol";
 import "./Libraries/TransferHelper.sol";
+import "./Libraries/UQ112x112.sol";
+import "./Libraries/UniswapV2Library.sol";
 
 contract RouterV2 {
     using UQ112x112 for uint224;
@@ -246,5 +247,140 @@ contract RouterV2 {
             amountETHMin,
             to
         );
+    }
+
+    function _swap(address[] calldata path, uint[] memory amountsOut) internal {
+        // in uniswap this function also takes care of sending the received token to the 'to' address
+        require(path.length > 1, "Invalid Path");
+        address tokenIn = path[0];
+        address tokenOut = path[1];
+        address pair = IUniswapV2Factory(factory).getPair(tokenIn, tokenOut);
+        address nextPair = path.length == 2
+            ? address(this)
+            : IUniswapV2Factory(factory).getPair(path[1], path[2]);
+        for (uint i = 1; ; ) {
+            if (tokenIn < tokenOut) {
+                IPair(pair).swap(0, amountsOut[i], nextPair, new bytes(0));
+            } else {
+                IPair(pair).swap(amountsOut[i], 0, nextPair, new bytes(0));
+            }
+
+            i++;
+            if (i == path.length) {
+                break;
+            }
+            tokenIn = tokenOut;
+            tokenOut = path[i];
+            pair = nextPair;
+            nextPair = i == path.length - 1
+                ? address(this)
+                : IUniswapV2Factory(factory).getPair(path[i], path[i + 1]);
+        }
+    }
+
+    function swapExactTokensForTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to
+    ) external returns (uint amountOut) {
+        // straight away doing the swaps would mean that we would have to pay gas for the transfers even if eventually the amountOut turns to be less than the amountOutMin. Hence we can find and cache the amountsOut first and verify that the amountsOut is greater than amountsOutMin.
+
+        uint[] memory amountsOut = UniswapV2Library.getAmountsOut(
+            factory,
+            path,
+            amountIn
+        );
+        require(
+            amountsOut[path.length - 1] >= amountOutMin,
+            "Insufficient amount received"
+        );
+
+        address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
+        TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
+        _swap(path, amountsOut);
+        TransferHelper.safeTransfer(
+            path[path.length - 1],
+            to,
+            amountsOut[path.length - 1]
+        );
+        return amountsOut[path.length - 1];
+    }
+
+    function swapTokensForExactTokens(
+        uint amountOut,
+        uint amountInMax,
+        address[] calldata path,
+        address to
+    ) external returns (uint amountIn) {
+        uint[] memory amountsIn = UniswapV2Library.getAmountsIn(
+            factory,
+            path,
+            amountOut
+        );
+        require(amountsIn[0] <= amountInMax, "Insufficient input tokens");
+        address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
+        TransferHelper.safeTransferFrom(
+            path[0],
+            msg.sender,
+            pair,
+            amountsIn[0]
+        );
+        _swap(path, amountsIn);
+        TransferHelper.safeTransfer(path[path.length - 1], to, amountOut);
+        return amountsIn[0];
+    }
+
+    function swapExactETHForTokens(
+        uint amountOutMin,
+        address[] calldata path,
+        address to
+    ) external payable returns (uint amountOut) {
+        require(path[0] == WETH, "INVALID_PATH");
+        uint[] memory amountsOut = UniswapV2Library.getAmountsOut(
+            factory,
+            path,
+            msg.value
+        );
+        require(
+            amountsOut[amountsOut.length - 1] >= amountOutMin,
+            "INSUFFICIENT_OUTPUT_AMOUNT"
+        );
+        IWETH(WETH).deposit{value: amountsOut[0]}();
+        address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
+        IWETH(WETH).transfer(pair, amountsOut[0]);
+        _swap(path, amountsOut);
+        TransferHelper.safeTransfer(
+            path[path.length - 1],
+            to,
+            amountsOut[path.length - 1]
+        );
+        return amountsOut[path.length - 1];
+    }
+
+    function swapTokensForExactETH(
+        uint amountOut,
+        uint amountInMax,
+        address[] calldata path,
+        address to
+    ) external returns (uint amountIn) {
+        require(path[path.length - 1] == WETH, "INVALID_PATH");
+        uint[] memory amountsIn = UniswapV2Library.getAmountsIn(
+            factory,
+            path,
+            amountOut
+        );
+        require(amountsIn[0] <= amountInMax, "EXCESSIVE_INPUT_AMOUNT");
+        address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
+        TransferHelper.safeTransferFrom(
+            path[0],
+            msg.sender,
+            pair,
+            amountsIn[0]
+        );
+        _swap(path, amountsIn);
+        IWETH(WETH).withdraw(amountsIn[amountsIn.length - 1]);
+        TransferHelper.safeTransferETH(to, amountsIn[amountsIn.length - 1]);
+        return amountsIn[0];
     }
 }

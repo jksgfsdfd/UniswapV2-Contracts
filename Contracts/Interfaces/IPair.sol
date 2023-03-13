@@ -22,4 +22,11 @@ interface IPair {
         bytes32 r,
         bytes32 s
     ) external;
+
+    function swap(
+        uint amount0Out,
+        uint amount1Out,
+        address to,
+        bytes calldata data
+    ) external;
 }
