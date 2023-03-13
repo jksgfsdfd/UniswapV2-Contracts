@@ -12,4 +12,14 @@ interface IPair {
     ) external returns (bool);
 
     function burn(address to) external returns (uint amount0, uint amount1);
+
+    function permit(
+        address owner,
+        address spender,
+        uint value,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external;
 }
