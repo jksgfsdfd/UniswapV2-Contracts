@@ -384,6 +384,7 @@ contract RouterV2 {
         return amountsIn[0];
     }
 
+    // for tokens with fee on transfer we can't estimate the amountOut as above since the fee impact will also have to be considered.
     function _swapSupportingFeeOnTransferTokens(
         address[] calldata path
     ) internal {
@@ -428,7 +429,6 @@ contract RouterV2 {
         address[] calldata path,
         address to
     ) external returns (uint amountOut) {
-        // here we can estimate the amount as above since the fee impact will also have to be considered.
         require(path.length > 1, "Invalid path");
         address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
@@ -444,7 +444,6 @@ contract RouterV2 {
         address[] calldata path,
         address to
     ) external returns (uint amountOut) {
-        // here we can estimate the amount as above since the fee impact will also have to be considered.
         require(path.length > 1, "Invalid path");
         require(path[path.length - 1] == WETH, "INVALID_PATH");
         address pair = IUniswapV2Factory(factory).getPair(path[0], path[1]);
@@ -461,7 +460,6 @@ contract RouterV2 {
         address[] calldata path,
         address to
     ) external payable returns (uint amountOut) {
-        // here we can estimate the amount as above since the fee impact will also have to be considered.
         require(path.length > 1, "Invalid path");
         require(path[0] == WETH, "INVALID_PATH");
         IWETH(WETH).deposit{value: msg.value}();
