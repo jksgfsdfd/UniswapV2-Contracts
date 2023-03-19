@@ -120,6 +120,7 @@ contract Pair is PairERC20 {
                 (amount1In * _totalSupply) / _reserve1,
                 (amount0In * _totalSupply) / _reserve0
             );
+            require(liquidity>0,"Insufficient amount added");
             _mint(to, liquidity);
         }
 
