@@ -119,11 +119,10 @@ contract Pair is PairERC20 {
             liquidity = Math.min(
                 (amount1In * _totalSupply) / _reserve1,
                 (amount0In * _totalSupply) / _reserve0
-            );
-            require(liquidity>0,"Insufficient amount added");
-            _mint(to, liquidity);
+            );            
         }
-
+        require(liquidity>0,"Insufficient amount added");
+        _mint(to, liquidity);
         _reserve0 = uint112(balance0);
         _reserve1 = uint112(balance1);
         reserve0 = _reserve0;
